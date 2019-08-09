@@ -356,17 +356,30 @@ private:
     }
 
 public:
+    Loop *ws_loop = nullptr;
+
     /* WebSocket contexts are always child contexts to a HTTP context so no SSL options are needed as they are inherited */
     static WebSocketContext *create(Loop *loop, us_socket_context_t *parentSocketContext) {
         WebSocketContext *webSocketContext = (WebSocketContext *) us_create_child_socket_context(SSL, parentSocketContext, sizeof(WebSocketContextData<SSL>));
         if (!webSocketContext) {
             return nullptr;
         }
-
         /* Init socket context data */
         new ((WebSocketContextData<SSL> *) us_socket_context_ext(SSL, (us_socket_context_t *)webSocketContext)) WebSocketContextData<SSL>;
         return webSocketContext->init();
     }
+
+	void ServerPublish(const std::string& topic, const std::string& message, uWS::OpCode opCode=uWS::OpCode::TEXT) {
+        uWS::WebSocketContextData<SSL> * webSocketContextData = getExt();
+
+        //std::cout << "msg size: " << message.size() << ", dst size: " << webSocketContextData->maxPayloadLength << std::endl;
+        std::shared_ptr<char> dst(new char[webSocketContextData->maxPayloadLength + 50], std::default_delete<char []>());
+        assert(message.size() < webSocketContextData->maxPayloadLength + 50);
+        size_t dst_length = uWS::protocol::formatMessage<true>(dst.get(), message.data(), message.length(), opCode, message.length(), false);
+        webSocketContextData->topicTree.publish(topic, dst.get(), dst_length);
+        us_wakeup_loop((us_loop_t*)ws_loop);
+    }
+
 };
 
 }

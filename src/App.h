@@ -106,6 +106,7 @@ public:
         /* Every route has its own websocket context with its own behavior and user data type */
         auto *webSocketContext = WebSocketContext<SSL, true>::create(Loop::get(), (us_socket_context_t *) httpContext);
 
+        webSocketContext->ws_loop = Loop::get();
         /* We need to clear this later on */
         webSocketContexts.push_back(webSocketContext);
 
@@ -313,6 +314,9 @@ public:
         return std::move(*this);
     }
 
+	std::vector<WebSocketContext<SSL, true> *>& getWebSocketContexts() {
+        return webSocketContexts;
+    }
 };
 
 typedef TemplatedApp<false> App;
