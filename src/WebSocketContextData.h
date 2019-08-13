@@ -42,7 +42,7 @@ struct WebSocketContextData {
     int idleTimeout = 0;
 
     /* Each websocket context has a topic tree for pub/sub */
-    TopicTree topicTree;
+    TopicTree<SSL> topicTree;
 };
 
 }

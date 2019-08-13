@@ -34,17 +34,26 @@ namespace uWS {
     // publishing to a node, then another node, then another node should prioritize draining that way
     // sending and publishing will interleave undefined, they are separate streams
 
+template <bool SSL>
 struct TopicTree {
 private:
-    struct Node : std::map<std::string, Node *> {
+    struct Node {
         /* Add and/or lookup node from topic */
         Node *get(std::string topic) {
-            std::pair<std::map<std::string, Node *>::iterator, bool> p = insert({topic, nullptr});
+            auto p = node_map.insert({topic, nullptr});
             if (p.second) {
                 return p.first->second = new Node;
             } else {
                 return p.first->second;
             }
+        }
+
+        auto find(std::string topic) {
+            return node_map.find(topic);
+        }
+
+        auto end() {
+            return node_map.end();
         }
 
         /* Subscribers have int backpressureOffset */
@@ -56,7 +65,7 @@ private:
         /* Backpressure is stored linearly up to a limit */
         std::string backpressure;
         unsigned int backpressureOffset = 0;
-
+        std::map<std::string, Node *> node_map;
 
     } topicToNode;
 
@@ -91,7 +100,7 @@ public:
 
             for (Node *topicNode : pubNodes) {
                 for (auto /*[*/ws/*, valid]*/ : topicNode->subscribers) {
-                    AsyncSocket<false> *asyncSocket = (AsyncSocket<false> *) ws; // assumes non-SSL for now
+                    AsyncSocket<SSL> *asyncSocket = (AsyncSocket<SSL> *) ws; // assumes non-SSL for now
 
                     /* Writing optionally raw data */
                     auto [written, failed] = asyncSocket->write(topicNode->sharedMessage.data(), topicNode->sharedMessage.length(), true, 0);
