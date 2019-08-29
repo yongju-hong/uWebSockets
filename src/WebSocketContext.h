@@ -373,8 +373,8 @@ public:
         uWS::WebSocketContextData<SSL> * webSocketContextData = getExt();
 
         //std::cout << "msg size: " << message.size() << ", dst size: " << webSocketContextData->maxPayloadLength << std::endl;
-        std::shared_ptr<char> dst(new char[webSocketContextData->maxPayloadLength + 50], std::default_delete<char []>());
-        assert(message.size() < webSocketContextData->maxPayloadLength + 50);
+        std::shared_ptr<char> dst(new char[message.size() + 100], std::default_delete<char []>());
+        assert(message.size() + 100 < webSocketContextData->maxPayloadLength);
         size_t dst_length = uWS::protocol::formatMessage<true>(dst.get(), message.data(), message.length(), opCode, message.length(), false);
         webSocketContextData->topicTree.publish(topic, dst.get(), dst_length);
         us_wakeup_loop((us_loop_t*)ws_loop);
