@@ -372,10 +372,10 @@ public:
 	void ServerPublish(const std::string& topic, const std::string& message, uWS::OpCode opCode=uWS::OpCode::TEXT) {
         uWS::WebSocketContextData<SSL> * webSocketContextData = getExt();
 
-        //std::cout << "msg size: " << message.size() << ", dst size: " << webSocketContextData->maxPayloadLength << std::endl;
         std::shared_ptr<char> dst(new char[message.size() + 100], std::default_delete<char []>());
         assert(message.size() + 100 < webSocketContextData->maxPayloadLength);
         size_t dst_length = uWS::protocol::formatMessage<true>(dst.get(), message.data(), message.length(), opCode, message.length(), false);
+        //std::cout << "ws context data addr: " << webSocketContextData << ", publish msg size: " << message.size() << ", dst size: " << dst_length << std::endl;
         webSocketContextData->topicTree.publish(topic, dst.get(), dst_length);
         us_wakeup_loop((us_loop_t*)ws_loop);
     }

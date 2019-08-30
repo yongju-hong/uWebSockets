@@ -170,8 +170,8 @@ public:
             if (it != curr->end()) {
                 curr = it->second;
                 //matches.push_back(curr);
-                curr->sharedMessage.append(data, length);
                 if (curr->subscribers.size()) {
+                    curr->sharedMessage.append(data, length);
                     pubNodes.insert(curr);
                 }
                 break;
@@ -188,8 +188,8 @@ public:
                     curr = it->second;
                     if (i == topic.length()) {
                         //matches.push_back(curr);
-                        curr->sharedMessage.append(data, length);
                         if (curr->subscribers.size()) {
+                            curr->sharedMessage.append(data, length);
                             pubNodes.insert(curr);
                         }
                         break;
