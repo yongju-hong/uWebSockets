@@ -150,9 +150,8 @@ public:
         );
 
         /* We frame the message right here and only pass raw bytes to the pub/subber */
-        //std::cout << "msg size: " << message.size() << ", dst size: " << webSocketContextData->maxPayloadLength << std::endl;
-        assert(message.size() < webSocketContextData->maxPayloadLength + 50);
-        std::shared_ptr<char> dst(new char[webSocketContextData->maxPayloadLength + 50], std::default_delete<char []>());
+        assert(message.size() + 50 < webSocketContextData->maxPayloadLength);
+        std::shared_ptr<char> dst(new char[message.size() + 50], std::default_delete<char []>());
         size_t dst_length = protocol::formatMessage<true>(dst.get(), message.data(), message.length(), opCode, message.length(), false);
 
         webSocketContextData->topicTree.publish(std::string(topic), dst.get(), dst_length);
