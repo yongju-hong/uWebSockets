@@ -174,26 +174,25 @@ public:
                     curr->sharedMessage.append(data, length);
                     pubNodes.insert(curr);
                 }
+                //break;
+            }
+            it = curr->find(path);
+            if (it == curr->end()) {
+                it = curr->find("+");
+                if (it != curr->end()) {
+                    goto skip;
+                }
                 break;
             } else {
-                it = curr->find(path);
-                if (it == curr->end()) {
-                    it = curr->find("+");
-                    if (it != curr->end()) {
-                        goto skip;
+skip:
+                curr = it->second;
+                if (i == topic.length()) {
+                    //matches.push_back(curr);
+                    if (curr->subscribers.size()) {
+                        curr->sharedMessage.append(data, length);
+                        pubNodes.insert(curr);
                     }
                     break;
-                } else {
-    skip:
-                    curr = it->second;
-                    if (i == topic.length()) {
-                        //matches.push_back(curr);
-                        if (curr->subscribers.size()) {
-                            curr->sharedMessage.append(data, length);
-                            pubNodes.insert(curr);
-                        }
-                        break;
-                    }
                 }
             }
         }
