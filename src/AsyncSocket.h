@@ -20,6 +20,7 @@
 
 /* This class implements async socket memory management strategies */
 
+#include <arpa/inet.h>
 #include "LoopData.h"
 #include "AsyncSocketData.h"
 
@@ -99,7 +100,24 @@ protected:
         static thread_local char buf[16];
         int ipLength = 16;
         us_socket_remote_address(SSL, (us_socket_t *) this, buf, &ipLength);
-        return std::string_view(buf, ipLength);
+        char ipstr[INET6_ADDRSTRLEN];
+        if ( ipLength == 4 ) {
+            //port = ntohs(s->sin_port);
+            inet_ntop(AF_INET, (struct in_addr*)buf, ipstr, sizeof ipstr);
+        } else { // AF_INET6
+            //port = ntohs(s->sin6_port);
+            struct in6_addr *addr6 = (struct in6_addr *)buf;
+            if (IN6_IS_ADDR_V4MAPPED(addr6)) {
+                struct sockaddr_in addr4;
+                //addr4.sin_addr.s_addr = addr6->s6_addr+12;
+                memcpy(&addr4.sin_addr.s_addr,addr6->s6_addr+12,sizeof(addr4.sin_addr.s_addr));
+                inet_ntop(AF_INET, &addr4.sin_addr, ipstr, sizeof ipstr);
+            } else {
+                inet_ntop(AF_INET6, addr6, ipstr, sizeof ipstr);
+            }
+        }
+        return std::string_view(ipstr);
+        //return std::string_view(buf, ipLength);
     }
 
     /* Write in three levels of prioritization: cork-buffer, syscall, socket-buffer. Always drain if possible.
