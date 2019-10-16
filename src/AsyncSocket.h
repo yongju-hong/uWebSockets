@@ -32,7 +32,8 @@ template <bool SSL>
 struct AsyncSocket {
     template <bool> friend struct HttpContext;
     template <bool, bool> friend struct WebSocketContext;
-    template <bool> friend struct TopicTree;
+    template <bool> friend struct WebSocketContextData;
+    friend struct TopicTree;
 
 protected:
     /* Get loop data for socket */

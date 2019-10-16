@@ -55,6 +55,12 @@ public:
 
     /* Send or buffer a WebSocket frame, compressed or not. Returns false on increased user space backpressure. */
     bool send(std::string_view message, uWS::OpCode opCode = uWS::OpCode::BINARY, bool compress = false) {
+        /* Every send resets the timeout */
+        WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *) us_socket_context_ext(SSL,
+            (us_socket_context_t *) us_socket_context(SSL, (us_socket_t *) this)
+        );
+        AsyncSocket<SSL>::timeout(webSocketContextData->idleTimeout);
+
         /* Transform the message to compressed domain if requested */
         if (compress) {
             WebSocketData *webSocketData = (WebSocketData *) Super::getAsyncSocketData();
@@ -128,7 +134,9 @@ public:
         }
 
         /* Make sure to unsubscribe from any pub/sub node at exit */
-        webSocketContextData->topicTree.unsubscribeAll(this);
+        webSocketContextData->topicTree.unsubscribeAll(webSocketData->subscriber);
+        delete webSocketData->subscriber;
+        webSocketData->subscriber = nullptr;
     }
 
     /* Subscribe to a topic according to MQTT rules and syntax */
@@ -137,24 +145,38 @@ public:
             (us_socket_context_t *) us_socket_context(SSL, (us_socket_t *) this)
         );
 
-        /* Fix this up */
-        bool *valid = new bool;
-        *valid = true;
-        webSocketContextData->topicTree.subscribe(std::string(topic), this, valid);
+        /* Make us a subscriber if we aren't yet */
+        WebSocketData *webSocketData = (WebSocketData *) us_socket_ext(SSL, (us_socket_t *) this);
+        if (!webSocketData->subscriber) {
+            webSocketData->subscriber = new Subscriber(this);
+        }
+
+        webSocketContextData->topicTree.subscribe(topic, webSocketData->subscriber);
+    }
+
+    /* Unsubscribe from a topic, returns true if we were subscribed */
+    bool unsubscribe(std::string_view topic) {
+        WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *) us_socket_context_ext(SSL,
+            (us_socket_context_t *) us_socket_context(SSL, (us_socket_t *) this)
+        );
+
+        WebSocketData *webSocketData = (WebSocketData *) us_socket_ext(SSL, (us_socket_t *) this);
+
+        return webSocketContextData->topicTree.unsubscribe(topic, webSocketData->subscriber);
     }
 
     /* Publish a message to a topic according to MQTT rules and syntax */
-    void publish(std::string_view topic, std::string_view message, OpCode opCode=OpCode::TEXT) {
+    void publish(std::string_view topic, std::string_view message, OpCode opCode = OpCode::TEXT, bool compress = false) {
         WebSocketContextData<SSL> *webSocketContextData = (WebSocketContextData<SSL> *) us_socket_context_ext(SSL,
             (us_socket_context_t *) us_socket_context(SSL, (us_socket_t *) this)
         );
 
         /* We frame the message right here and only pass raw bytes to the pub/subber */
-        assert(message.size() + 50 < webSocketContextData->maxPayloadLength);
-        std::shared_ptr<char> dst(new char[message.size() + 50], std::default_delete<char []>());
-        size_t dst_length = protocol::formatMessage<true>(dst.get(), message.data(), message.length(), opCode, message.length(), false);
+        char *dst = (char *) malloc(protocol::messageFrameSize(message.size()));
+        size_t dst_length = protocol::formatMessage<true>(dst, message.data(), message.length(), opCode, message.length(), false);
 
-        webSocketContextData->topicTree.publish(std::string(topic), dst.get(), dst_length);
+        webSocketContextData->topicTree.publish(topic, std::string_view(dst, dst_length));
+        free(dst);
     }
 };
 

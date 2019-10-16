@@ -225,7 +225,6 @@ private:
 
         /* Handle socket disconnections */
         us_socket_context_on_close(SSL, getSocketContext(), [](auto *s) {
-
             /* For whatever reason, if we already have emitted close event, do not emit it again */
             WebSocketData *webSocketData = (WebSocketData *) (us_socket_ext(SSL, s));
             if (!webSocketData->isShuttingDown) {
@@ -237,7 +236,9 @@ private:
                 }
 
                 /* Make sure to unsubscribe from any pub/sub node at exit */
-                webSocketContextData->topicTree.unsubscribeAll(s);
+                webSocketContextData->topicTree.unsubscribeAll(webSocketData->subscriber);
+                delete webSocketData->subscriber;
+                webSocketData->subscriber = nullptr;
             }
 
             /* Destruct in-placed data struct */
@@ -373,11 +374,11 @@ public:
         ws_loop->defer([this, topic, message, opCode] () {
             uWS::WebSocketContextData<SSL> * webSocketContextData = this->getExt();
 
-            assert(message.size() + 50 < webSocketContextData->maxPayloadLength);
-            std::shared_ptr<char> dst(new char[message.size() + 50], std::default_delete<char []>());
-            size_t dst_length = uWS::protocol::formatMessage<true>(dst.get(), message.data(), message.length(), opCode, message.length(), false);
-            //std::cout << "ws context data addr: " << webSocketContextData << ", publish msg size: " << message.size() << ", dst size: " << dst_length << std::endl;
-            webSocketContextData->topicTree.publish(topic, dst.get(), dst_length);
+            char *dst = (char *) malloc(protocol::messageFrameSize(message.size()));
+            size_t dst_length = protocol::formatMessage<true>(dst, message.data(), message.length(), opCode, message.length(), false);
+
+            webSocketContextData->topicTree.publish(topic, std::string_view(dst, dst_length));
+            ::free(dst);
             });
     }
 

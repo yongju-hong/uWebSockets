@@ -22,7 +22,7 @@
 #include <string_view>
 
 #include "WebSocketProtocol.h"
-#include "TopicTree.h"
+#include "TopicTreeDraft.h"
 
 namespace uWS {
 
@@ -41,8 +41,37 @@ struct WebSocketContextData {
     size_t maxPayloadLength = 0;
     int idleTimeout = 0;
 
+    /* There needs to be a maxBackpressure which will force close everything over that limit */
+    size_t maxBackpressure = 0;
+
     /* Each websocket context has a topic tree for pub/sub */
-    TopicTree<SSL> topicTree;
+    TopicTree topicTree;
+
+    WebSocketContextData() : topicTree([this](Subscriber *s, std::string_view data) -> int {
+        /* We rely on writing to regular asyncSockets */
+        auto *asyncSocket = (AsyncSocket<SSL> *) s->user;
+
+        auto [written, failed] = asyncSocket->write(data.data(), data.length());
+        if (!failed) {
+            asyncSocket->timeout(this->idleTimeout);
+        } else {
+            /* Note: this assumes we are not corked, as corking will swallow things and fail later on */
+
+            /* Check if we now have too much backpressure (todo: don't buffer up before check) */
+            if (asyncSocket->getBufferedAmount() > maxBackpressure) {
+                asyncSocket->close();
+            }
+        }
+
+        /* Reserved, unused */
+        return 0;
+    }) {
+        /* bug: This should probably happen in both post and pre, esp for libuv */
+        Loop::get()->addPostHandler([this](Loop *loop) {
+            /* Commit pub/sub batches every loop iteration */
+            topicTree.drain();
+        });
+    }
 };
 
 }
