@@ -20,7 +20,10 @@
 #ifndef UWS_PERMESSAGEDEFLATE_H
 #define UWS_PERMESSAGEDEFLATE_H
 
+#ifndef UWS_NO_ZLIB
 #include <zlib.h>
+#endif
+
 #include <string>
 
 namespace uWS {
@@ -158,7 +161,18 @@ struct InflationStream {
 
         if (zlibContext->dynamicInflationBuffer.length()) {
             zlibContext->dynamicInflationBuffer.append(zlibContext->inflationBuffer, LARGE_BUFFER_SIZE - inflationStream.avail_out);
+
+            /* Let's be strict about the max size */
+            if (zlibContext->dynamicInflationBuffer.length() > maxPayloadLength) {
+                return {nullptr, 0};
+            }
+
             return {zlibContext->dynamicInflationBuffer.data(), zlibContext->dynamicInflationBuffer.length()};
+        }
+
+        /* Let's be strict about the max size */
+        if ((LARGE_BUFFER_SIZE - inflationStream.avail_out) > maxPayloadLength) {
+            return {nullptr, 0};
         }
 
         return {zlibContext->inflationBuffer, LARGE_BUFFER_SIZE - inflationStream.avail_out};

@@ -54,6 +54,13 @@ public:
         httpContext->filter(std::move(filterHandler));
     }
 
+    /* Publishes a message to all websocket contexts */
+    void publish(std::string_view topic, std::string_view message, OpCode opCode, bool compress = false) {
+        for (auto *webSocketContext : webSocketContexts) {
+            webSocketContext->getExt()->publish(topic, message, opCode, compress);
+        }
+    }
+
     ~TemplatedApp() {
         /* Let's just put everything here */
         if (httpContext) {
@@ -131,14 +138,21 @@ public:
         /* Copy all handlers */
         webSocketContext->getExt()->messageHandler = std::move(behavior.message);
         webSocketContext->getExt()->drainHandler = std::move(behavior.drain);
-        webSocketContext->getExt()->closeHandler = std::move(behavior.close);
+        webSocketContext->getExt()->closeHandler = std::move([closeHandler = std::move(behavior.close)](WebSocket<SSL, true> *ws, int code, std::string_view message) mutable {
+            if (closeHandler) {
+                closeHandler(ws, code, message);
+            }
+
+            /* Destruct user data after returning from close handler */
+            ((UserData *) ws->getUserData())->~UserData();
+        });
 
         /* Copy settings */
         webSocketContext->getExt()->maxPayloadLength = behavior.maxPayloadLength;
         webSocketContext->getExt()->idleTimeout = behavior.idleTimeout;
         webSocketContext->getExt()->maxBackpressure = behavior.maxBackpressure;
 
-        return std::move(get(pattern, [webSocketContext, httpContext = this->httpContext, behavior = std::move(behavior)](auto *res, auto *req) mutable {
+        httpContext->onHttp("get", pattern, [webSocketContext, httpContext = this->httpContext, behavior = std::move(behavior)](auto *res, auto *req) mutable {
 
             /* If we have this header set, it's a websocket */
             std::string_view secWebSocketKey = req->getHeader("sec-websocket-key");
@@ -212,16 +226,21 @@ public:
                             (us_socket_context_t *) webSocketContext, (us_socket_t *) res, sizeof(WebSocketData) + sizeof(UserData));
 
                 /* Update corked socket in case we got a new one (assuming we always are corked in handlers). */
-                webSocket->cork();
+                webSocket->AsyncSocket<SSL>::cork();
 
                 /* Initialize websocket with any moved backpressure intact */
                 httpContext->upgradeToWebSocket(
                             webSocket->init(perMessageDeflate, slidingDeflateWindow, std::move(backpressure))
                             );
 
+                /* Arm idleTimeout */
+                us_socket_timeout(SSL, (us_socket_t *) webSocket, behavior.idleTimeout);
+
+                /* Default construct the UserData right before calling open handler */
+                new (webSocket->getUserData()) UserData;
+
                 /* Emit open event and start the timeout */
                 if (behavior.open) {
-                    us_socket_timeout(SSL, (us_socket_t *) webSocket, behavior.idleTimeout);
                     behavior.open(webSocket, req);
                 }
 
@@ -233,7 +252,8 @@ public:
                 /* Tell the router that we did not handle this request */
                 req->setYield(true);
             }
-        }));
+        }, true);
+        return std::move(*this);
     }
 
     TemplatedApp &&get(std::string pattern, fu2::unique_function<void(HttpResponse<SSL> *, HttpRequest *)> &&handler) {

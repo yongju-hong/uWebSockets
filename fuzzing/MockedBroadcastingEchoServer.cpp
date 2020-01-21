@@ -24,25 +24,21 @@ extern "C" int LLVMFuzzerInitialize(int *argc, char ***argv) {
         .idleTimeout = 10,
         /* Handlers */
         .open = [](auto *ws, auto *req) {
-            if (req->getHeader("close_me").length()) {
-                ws->close();
-            } else if (req->getHeader("end_me").length()) {
-                ws->end(1006);
-            }
+                /* Subscribe to anything */
+                ws->subscribe(req->getHeader("topic"));
         },
         .message = [](auto *ws, std::string_view message, uWS::OpCode opCode) {
-            if (message.length() > 300) {
-                /* Inform the sanitizer of the fault */
-                fprintf(stderr, "Too long message passed\n");
-                free((void *) -1);
-            }
-
             if (message.length() && message[0] == 'C') {
                 ws->close();
             } else if (message.length() && message[0] == 'E') {
                 ws->end(1006);
             } else {
-                ws->send(message, opCode, true);
+                /* Publish to topic sent by message */
+                ws->publish(message, message, opCode, true);
+
+                if (message.length() && message[0] == 'U') {
+                   ws->unsubscribe(message);
+                }
             }
         },
         .drain = [](auto *ws) {
@@ -55,7 +51,8 @@ extern "C" int LLVMFuzzerInitialize(int *argc, char ***argv) {
 
         },
         .close = [](auto *ws, int code, std::string_view message) {
-
+             /* Not necessary but we'll call it for coverage */
+             ws->unsubscribeAll();
         }
     }).listen(9001, [](us_listen_socket_t *listenSocket) {
         if (listenSocket) {

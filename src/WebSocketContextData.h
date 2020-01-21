@@ -22,7 +22,7 @@
 #include <string_view>
 
 #include "WebSocketProtocol.h"
-#include "TopicTreeDraft.h"
+#include "TopicTree.h"
 
 namespace uWS {
 
@@ -47,18 +47,24 @@ struct WebSocketContextData {
     /* Each websocket context has a topic tree for pub/sub */
     TopicTree topicTree;
 
+    ~WebSocketContextData() {
+        /* We must unregister any loop post handler here */
+        Loop::get()->removePostHandler(this);
+        Loop::get()->removePreHandler(this);
+    }
+
     WebSocketContextData() : topicTree([this](Subscriber *s, std::string_view data) -> int {
         /* We rely on writing to regular asyncSockets */
         auto *asyncSocket = (AsyncSocket<SSL> *) s->user;
 
-        auto [written, failed] = asyncSocket->write(data.data(), data.length());
+        auto [written, failed] = asyncSocket->write(data.data(), (int) data.length());
         if (!failed) {
             asyncSocket->timeout(this->idleTimeout);
         } else {
             /* Note: this assumes we are not corked, as corking will swallow things and fail later on */
 
             /* Check if we now have too much backpressure (todo: don't buffer up before check) */
-            if (asyncSocket->getBufferedAmount() > maxBackpressure) {
+            if ((unsigned int) asyncSocket->getBufferedAmount() > maxBackpressure) {
                 asyncSocket->close();
             }
         }
@@ -66,11 +72,26 @@ struct WebSocketContextData {
         /* Reserved, unused */
         return 0;
     }) {
-        /* bug: This should probably happen in both post and pre, esp for libuv */
-        Loop::get()->addPostHandler([this](Loop *loop) {
+        /* We empty for both pre and post just to make sure */
+        Loop::get()->addPostHandler(this, [this](Loop *loop) {
             /* Commit pub/sub batches every loop iteration */
             topicTree.drain();
         });
+
+        Loop::get()->addPreHandler(this, [this](Loop *loop) {
+            /* Commit pub/sub batches every loop iteration */
+            topicTree.drain();
+        });
+    }
+
+    /* Helper for topictree publish, common path from app and ws */
+    void publish(std::string_view topic, std::string_view message, OpCode opCode, bool compress) {
+        /* We frame the message right here and only pass raw bytes to the pub/subber */
+        char *dst = (char *) malloc(protocol::messageFrameSize(message.size()));
+        size_t dst_length = protocol::formatMessage<true>(dst, message.data(), message.length(), opCode, message.length(), false);
+
+        topicTree.publish(topic, std::string_view(dst, dst_length));
+        ::free(dst);
     }
 };
 
